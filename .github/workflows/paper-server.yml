@@ -1,4 +1,4 @@
-name: Paper Minecraft Server
+name: Paper Minecraft Server + Playit
 
 on:
   workflow_dispatch:
@@ -74,6 +74,35 @@ jobs:
           grep -q '^eula=true$' eula.txt
           mkdir -p plugins
 
+      - name: Start Playit agent
+        if: ${{ secrets.PLAYIT_SECRET_KEY != '' }}
+        env:
+          SECRET_KEY: ${{ secrets.PLAYIT_SECRET_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '🌐 Starting Playit agent...'
+          docker pull ghcr.io/playit-cloud/playit-agent:latest
+          docker run -d --name playit-agent --network host \
+            -e SECRET_KEY="$SECRET_KEY" \
+            ghcr.io/playit-cloud/playit-agent:latest
+          sleep 8
+          echo '📡 Playit agent logs:'
+          docker logs --tail 80 playit-agent || true
+
+      - name: Verify Playit agent
+        if: ${{ secrets.PLAYIT_SECRET_KEY != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! docker ps --format '{{.Names}}' | grep -qx 'playit-agent'; then
+            echo '❌ Playit agent is not running.'
+            docker logs playit-agent || true
+            exit 1
+          fi
+          echo '✅ Playit agent is running.'
+          echo 'ℹ️ The Playit tunnel must point to localhost:25565 in your Playit account.'
+
       - name: Start Paper
         shell: bash
         run: |
@@ -85,6 +114,14 @@ jobs:
           java -version
           echo '============================================================'
           java -Xms512M -Xmx4G -jar paper.jar --nogui
+
+      - name: Playit logs
+        if: always()
+        shell: bash
+        run: |
+          echo '🌐 Playit final logs:'
+          docker logs --tail 150 playit-agent 2>/dev/null || true
+          docker rm -f playit-agent 2>/dev/null || true
 
       - name: Upload server logs
         if: always()
