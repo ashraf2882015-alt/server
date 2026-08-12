@@ -1,0 +1,3 @@
+# Minecraft EULA acceptance for this test server
+# https://aka.ms/MinecraftEULA
+eula=true
