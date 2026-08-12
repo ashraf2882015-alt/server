@@ -37,23 +37,32 @@ jobs:
           USER_AGENT='ashraf2882015-alt-paper-server/1.0 (https://github.com/ashraf2882015-alt/server)'
           PROJECT='paper'
 
-          VERSION=$(curl -fsSL -H "User-Agent: $USER_AGENT" \
+          VERSIONS=$(curl -fsSL -H "User-Agent: $USER_AGENT" \
             "https://fill.papermc.io/v3/projects/${PROJECT}" |
-            jq -r '.versions | to_entries[] | .value[]' | sort -V | tail -n1)
+            jq -r '.versions | to_entries[] | .value[]' | sort -V -r)
 
-          echo "Paper version: ${VERSION}"
+          URL=''
+          FOUND_VERSION=''
 
-          BUILDS=$(curl -fsSL -H "User-Agent: $USER_AGENT" \
-            "https://fill.papermc.io/v3/projects/${PROJECT}/versions/${VERSION}/builds")
+          for VERSION in $VERSIONS; do
+            BUILDS=$(curl -fsSL -H "User-Agent: $USER_AGENT" \
+              "https://fill.papermc.io/v3/projects/${PROJECT}/versions/${VERSION}/builds")
 
-          URL=$(echo "$BUILDS" | jq -r 'first(.[] | select(.channel == "STABLE") | .downloads."server:default".url) // empty')
+            URL=$(echo "$BUILDS" | jq -r 'first(.[] | select(.channel == "STABLE") | .downloads."server:default".url) // ""')
+
+            if [ -n "$URL" ]; then
+              FOUND_VERSION="$VERSION"
+              break
+            fi
+          done
 
           if [ -z "$URL" ]; then
-            echo 'No stable Paper build was found.'
+            echo 'No stable Paper builds are currently available.'
             exit 1
           fi
 
-          echo "Downloading: $URL"
+          echo "Found stable Paper version: ${FOUND_VERSION}"
+          echo "Downloading: ${URL}"
           curl -fL -A "$USER_AGENT" -o paper.jar "$URL"
           ls -lh paper.jar
 
