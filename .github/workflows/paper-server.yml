@@ -36,37 +36,37 @@ jobs:
           set -euo pipefail
           USER_AGENT='ashraf2882015-alt-paper-server/1.0 (https://github.com/ashraf2882015-alt/server)'
           PROJECT='paper'
-
-          VERSIONS=$(curl -fsSL -H "User-Agent: $USER_AGENT" \
-            "https://fill.papermc.io/v3/projects/${PROJECT}" |
-            jq -r '.versions | to_entries[] | .value[]' | sort -V -r)
-
+          VERSIONS=$(curl -fsSL -H "User-Agent: $USER_AGENT" "https://fill.papermc.io/v3/projects/${PROJECT}" | jq -r '.versions | to_entries[] | .value[]' | sort -V -r)
           URL=''
           FOUND_VERSION=''
-
           for VERSION in $VERSIONS; do
-            BUILDS=$(curl -fsSL -H "User-Agent: $USER_AGENT" \
-              "https://fill.papermc.io/v3/projects/${PROJECT}/versions/${VERSION}/builds")
+            BUILDS=$(curl -fsSL -H "User-Agent: $USER_AGENT" "https://fill.papermc.io/v3/projects/${PROJECT}/versions/${VERSION}/builds")
             URL=$(echo "$BUILDS" | jq -r 'first(.[] | select(.channel == "STABLE") | .downloads."server:default".url) // ""')
-            if [ -n "$URL" ]; then
-              FOUND_VERSION="$VERSION"
-              break
-            fi
+            if [ -n "$URL" ]; then FOUND_VERSION="$VERSION"; break; fi
           done
-
-          test -n "$URL"
+          if [ -z "$URL" ]; then echo 'No stable Paper builds are currently available.'; exit 1; fi
           echo "Found stable Paper version: ${FOUND_VERSION}"
+          echo "Downloading: ${URL}"
           curl -fL -A "$USER_AGENT" -o paper.jar "$URL"
           ls -lh paper.jar
 
-      - name: Download Geyser + Floodgate
+      - name: Download Geyser, Floodgate and Playit plugin
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p plugins
           USER_AGENT='ashraf2882015-alt-paper-server/1.0 (https://github.com/ashraf2882015-alt/server)'
+
+          echo '🌉 Downloading Geyser-Spigot...'
           curl -fL -A "$USER_AGENT" 'https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot' -o plugins/Geyser-Spigot.jar
+
+          echo '🚪 Downloading Floodgate-Spigot...'
           curl -fL -A "$USER_AGENT" 'https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot' -o plugins/floodgate-spigot.jar
+
+          echo '🌐 Downloading Playit Minecraft plugin...'
+          curl -fL -A "$USER_AGENT" 'https://github.com/playit-cloud/playit-minecraft-plugin/releases/latest/download/playit-minecraft-plugin.jar' -o plugins/playit-minecraft-plugin.jar
+
+          echo '📦 Installed plugins:'
           ls -lh plugins/*.jar
 
       - name: Prepare server
@@ -77,49 +77,18 @@ jobs:
           grep -q '^eula=true$' eula.txt
           mkdir -p plugins
 
-      - name: Start Playit agent (claim mode, no secret)
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo '🌐 Starting Playit without a secret...'
-          curl -fsSL https://playit-cloud.github.io/ppa/key.gpg | gpg --dearmor > playit.gpg
-          sudo install -m 0644 playit.gpg /usr/share/keyrings/playit.gpg
-          echo 'deb [signed-by=/usr/share/keyrings/playit.gpg] https://playit-cloud.github.io/ppa/data ./ ' | sudo tee /etc/apt/sources.list.d/playit.list >/dev/null
-          sudo apt-get update -qq
-          sudo apt-get install -y playit
-          echo '▶ Starting Playit setup/claim mode...'
-          nohup playit > playit.log 2>&1 &
-          PLAYIT_PID=$!
-          echo "Playit PID: $PLAYIT_PID"
-          sleep 10
-          echo '============================================================'
-          echo '🌐 PLAYIT OUTPUT / CLAIM LINK'
-          echo '============================================================'
-          cat playit.log || true
-          echo '============================================================'
-          echo 'If Playit printed a claim URL, open that URL in your browser to claim the agent.'
-          echo '============================================================'
-
       - name: Start Paper
         shell: bash
         run: |
           set -uo pipefail
           echo '============================================================'
           echo '🟢 Starting Paper Minecraft server'
-          echo '🌉 Geyser + Floodgate plugins installed'
-          echo '🌐 Playit claim mode enabled (no secret)'
+          echo '🌉 Geyser + Floodgate + Playit plugin installed'
           echo "🕒 $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           echo '☕ Java:'
           java -version
           echo '============================================================'
           java -Xms512M -Xmx4G -jar paper.jar --nogui
-
-      - name: Final Playit logs
-        if: always()
-        shell: bash
-        run: |
-          echo '🌐 Playit final logs:'
-          cat playit.log 2>/dev/null || true
 
       - name: Upload server logs
         if: always()
@@ -130,6 +99,5 @@ jobs:
             logs/
             crash-reports/
             *.log
-            playit.log
           if-no-files-found: ignore
           retention-days: 7
