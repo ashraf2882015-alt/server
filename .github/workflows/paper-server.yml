@@ -1,4 +1,4 @@
-name: Paper Minecraft Server + Playit
+name: Paper Minecraft Server + Playit + Geyser
 
 on:
   workflow_dispatch:
@@ -66,6 +66,25 @@ jobs:
           curl -fL -A "$USER_AGENT" -o paper.jar "$URL"
           ls -lh paper.jar
 
+      - name: Download Geyser + Floodgate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p plugins
+          USER_AGENT='ashraf2882015-alt-paper-server/1.0 (https://github.com/ashraf2882015-alt/server)'
+
+          echo '🌉 Downloading Geyser-Spigot...'
+          curl -fL -A "$USER_AGENT" \
+            'https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot' \
+            -o plugins/Geyser-Spigot.jar
+
+          echo '🚪 Downloading Floodgate-Spigot...'
+          curl -fL -A "$USER_AGENT" \
+            'https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot' \
+            -o plugins/floodgate-spigot.jar
+
+          ls -lh plugins/*.jar
+
       - name: Prepare server
         shell: bash
         run: |
@@ -101,7 +120,8 @@ jobs:
             exit 1
           fi
           echo '✅ Playit agent is running.'
-          echo 'ℹ️ The Playit tunnel must point to localhost:25565 in your Playit account.'
+          echo 'ℹ️ Java tunnel: TCP localhost:25565'
+          echo 'ℹ️ Bedrock tunnel: UDP localhost:19132'
 
       - name: Start Paper
         shell: bash
@@ -109,6 +129,7 @@ jobs:
           set -uo pipefail
           echo '============================================================'
           echo '🟢 Starting Paper Minecraft server'
+          echo '🌉 Geyser + Floodgate plugins installed'
           echo "🕒 $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           echo '☕ Java:'
           java -version
