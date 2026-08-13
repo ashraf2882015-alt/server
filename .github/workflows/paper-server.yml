@@ -1,4 +1,4 @@
-name: Paper Minecraft Server + Playit + Geyser
+name: Paper Minecraft Server + Playit Agent + Geyser
 
 on:
   workflow_dispatch:
@@ -46,11 +46,10 @@ jobs:
           done
           if [ -z "$URL" ]; then echo 'No stable Paper builds are currently available.'; exit 1; fi
           echo "Found stable Paper version: ${FOUND_VERSION}"
-          echo "Downloading: ${URL}"
           curl -fL -A "$USER_AGENT" -o paper.jar "$URL"
           ls -lh paper.jar
 
-      - name: Download Geyser, Floodgate and Playit plugin
+      - name: Download Geyser and Floodgate
         shell: bash
         run: |
           set -euo pipefail
@@ -63,11 +62,19 @@ jobs:
           echo '🚪 Downloading Floodgate-Spigot...'
           curl -fL -A "$USER_AGENT" 'https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot' -o plugins/floodgate-spigot.jar
 
-          echo '🌐 Downloading Playit Minecraft plugin...'
-          curl -fL -A "$USER_AGENT" 'https://github.com/playit-cloud/playit-minecraft-plugin/releases/latest/download/playit-minecraft-plugin.jar' -o plugins/playit-minecraft-plugin.jar
-
-          echo '📦 Installed plugins:'
           ls -lh plugins/*.jar
+
+      - name: Install Playit Agent
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '🌐 Installing Playit Agent...'
+          curl -SsL https://playit-cloud.github.io/ppa/key.gpg | sudo gpg --dearmor --yes -o /usr/share/keyrings/playit.gpg
+          sudo chmod 0644 /usr/share/keyrings/playit.gpg
+          echo 'deb [signed-by=/usr/share/keyrings/playit.gpg] https://playit-cloud.github.io/ppa/data debian main' | sudo tee /etc/apt/sources.list.d/playit.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y playit
+          playit --version || true
 
       - name: Prepare server
         shell: bash
@@ -77,19 +84,37 @@ jobs:
           grep -q '^eula=true$' eula.txt
           mkdir -p plugins
 
-      - name: Start Paper
+      - name: Start Paper and Playit
         shell: bash
         run: |
           set -uo pipefail
           echo '============================================================'
-          echo '🟢 Starting Paper Minecraft server'
-          echo '🌉 Geyser + Floodgate + Playit plugin installed'
+          echo '🟢 Starting Paper + Geyser + Floodgate + Playit Agent'
           echo "🕒 $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           echo '☕ Java:'
           java -version
           echo '============================================================'
+
+          echo '🌐 Starting Playit Agent...'
+          playit > playit.log 2>&1 &
+          PLAYIT_PID=$!
+          echo "Playit PID: $PLAYIT_PID"
+
+          sleep 3
+          echo '================ PLAYIT LOG ================'
+          cat playit.log || true
+          echo '============================================='
+
+          echo '🧱 Starting Paper...'
           java -Xms512M -Xmx4G -jar paper.jar --nogui
 
+      - name: Show Playit log
+        if: always()
+        shell: bash
+        run: |
+          echo '================ PLAYIT FINAL LOG ================'
+          cat playit.log 2>/dev/null || true
+          echo '==================================================='n
       - name: Upload server logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -99,5 +124,6 @@ jobs:
             logs/
             crash-reports/
             *.log
+            playit.log
           if-no-files-found: ignore
           retention-days: 7
