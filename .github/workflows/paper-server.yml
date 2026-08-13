@@ -55,13 +55,10 @@ jobs:
           set -euo pipefail
           mkdir -p plugins
           USER_AGENT='ashraf2882015-alt-paper-server/1.0 (https://github.com/ashraf2882015-alt/server)'
-
           echo '🌉 Downloading Geyser-Spigot...'
           curl -fL -A "$USER_AGENT" 'https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot' -o plugins/Geyser-Spigot.jar
-
           echo '🚪 Downloading Floodgate-Spigot...'
           curl -fL -A "$USER_AGENT" 'https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot' -o plugins/floodgate-spigot.jar
-
           ls -lh plugins/*.jar
 
       - name: Install Playit Agent
@@ -94,17 +91,14 @@ jobs:
           echo '☕ Java:'
           java -version
           echo '============================================================'
-
           echo '🌐 Starting Playit Agent...'
           playit > playit.log 2>&1 &
           PLAYIT_PID=$!
           echo "Playit PID: $PLAYIT_PID"
-
           sleep 3
           echo '================ PLAYIT LOG ================'
           cat playit.log || true
           echo '============================================='
-
           echo '🧱 Starting Paper...'
           java -Xms512M -Xmx4G -jar paper.jar --nogui
 
@@ -114,7 +108,8 @@ jobs:
         run: |
           echo '================ PLAYIT FINAL LOG ================'
           cat playit.log 2>/dev/null || true
-          echo '==================================================='n
+          echo '==================================================='
+
       - name: Upload server logs
         if: always()
         uses: actions/upload-artifact@v4
