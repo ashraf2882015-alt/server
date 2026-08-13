@@ -62,7 +62,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo '🌐 Downloading Playit Agent...'
+          echo '🌐 Downloading Playit Agent 1.0.x...'
           API='https://api.github.com/repos/playit-cloud/playit-agent/releases/latest'
           ASSET_URL=$(curl -fsSL "$API" | jq -r '.assets[] | select(.name == "playit-linux-amd64") | .browser_download_url' | head -n1)
           if [ -z "$ASSET_URL" ] || [ "$ASSET_URL" = "null" ]; then
@@ -71,7 +71,7 @@ jobs:
           fi
           curl -fL "$ASSET_URL" -o playit
           chmod +x playit
-          ls -lh playit
+          ./playit --version || true
 
       - name: Prepare server
         shell: bash
@@ -81,34 +81,24 @@ jobs:
           grep -q '^eula=true$' eula.txt
           mkdir -p plugins
 
-      - name: Start Playit daemon
+      - name: Start Playit Agent
         shell: bash
         run: |
-          set -euo pipefail
-          mkdir -p .playit
-          echo '🌐 Starting Playit daemon...'
-          ./playitd --socket-path="$PWD/.playit/playit.sock" --secret-path="$PWD/.playit/playit.toml" > playitd.log 2>&1 &
-          echo $! > playitd.pid
-          sleep 3
-          if ! kill -0 "$(cat playitd.pid)" 2>/dev/null; then
-            echo 'Playit daemon failed to start:'
-            cat playitd.log || true
+          set -uo pipefail
+          echo '============================================================'
+          echo '🌐 Starting official Playit Agent'
+          echo 'The first run may print a claim URL.'
+          echo '============================================================'
+          ./playit > playit.log 2>&1 &
+          PLAYIT_PID=$!
+          echo "$PLAYIT_PID" > playit.pid
+          sleep 5
+          if ! kill -0 "$PLAYIT_PID" 2>/dev/null; then
+            echo '❌ Playit Agent exited during startup.'
+            cat playit.log || true
             exit 1
           fi
-          echo '✅ Playit daemon is running.'
-          cat playitd.log || true
-
-      - name: Start Playit client
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo '🌐 Starting Playit client...'
-          ./playit --socket-path="$PWD/.playit/playit.sock" > playit.log 2>&1 &
-          echo $! > playit.pid
-          sleep 5
-          echo '================ PLAYIT LOG ================'
           cat playit.log || true
-          echo '============================================='
 
       - name: Start Paper
         shell: bash
@@ -117,15 +107,13 @@ jobs:
           echo '🧱 Starting Paper + Geyser + Floodgate...'
           java -Xms512M -Xmx4G -jar paper.jar --nogui
 
-      - name: Show Playit logs
+      - name: Show Playit log
         if: always()
         shell: bash
         run: |
-          echo '================ PLAYIT DAEMON LOG ================'
-          cat playitd.log 2>/dev/null || true
-          echo '================ PLAYIT CLIENT LOG ================'
+          echo '================ PLAYIT LOG ================'
           cat playit.log 2>/dev/null || true
-          echo '===================================================='
+          echo '============================================='
 
       - name: Upload server logs
         if: always()
@@ -137,6 +125,5 @@ jobs:
             crash-reports/
             *.log
             playit.log
-            playitd.log
           if-no-files-found: ignore
           retention-days: 7
