@@ -47,22 +47,15 @@ jobs:
           for VERSION in $VERSIONS; do
             BUILDS=$(curl -fsSL -H "User-Agent: $USER_AGENT" \
               "https://fill.papermc.io/v3/projects/${PROJECT}/versions/${VERSION}/builds")
-
             URL=$(echo "$BUILDS" | jq -r 'first(.[] | select(.channel == "STABLE") | .downloads."server:default".url) // ""')
-
             if [ -n "$URL" ]; then
               FOUND_VERSION="$VERSION"
               break
             fi
           done
 
-          if [ -z "$URL" ]; then
-            echo 'No stable Paper builds are currently available.'
-            exit 1
-          fi
-
+          test -n "$URL"
           echo "Found stable Paper version: ${FOUND_VERSION}"
-          echo "Downloading: ${URL}"
           curl -fL -A "$USER_AGENT" -o paper.jar "$URL"
           ls -lh paper.jar
 
@@ -72,17 +65,8 @@ jobs:
           set -euo pipefail
           mkdir -p plugins
           USER_AGENT='ashraf2882015-alt-paper-server/1.0 (https://github.com/ashraf2882015-alt/server)'
-
-          echo '🌉 Downloading Geyser-Spigot...'
-          curl -fL -A "$USER_AGENT" \
-            'https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot' \
-            -o plugins/Geyser-Spigot.jar
-
-          echo '🚪 Downloading Floodgate-Spigot...'
-          curl -fL -A "$USER_AGENT" \
-            'https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot' \
-            -o plugins/floodgate-spigot.jar
-
+          curl -fL -A "$USER_AGENT" 'https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot' -o plugins/Geyser-Spigot.jar
+          curl -fL -A "$USER_AGENT" 'https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot' -o plugins/floodgate-spigot.jar
           ls -lh plugins/*.jar
 
       - name: Prepare server
@@ -93,35 +77,28 @@ jobs:
           grep -q '^eula=true$' eula.txt
           mkdir -p plugins
 
-      - name: Start Playit agent
-        if: ${{ secrets.PLAYIT_SECRET_KEY != '' }}
-        env:
-          SECRET_KEY: ${{ secrets.PLAYIT_SECRET_KEY }}
+      - name: Start Playit agent (claim mode, no secret)
         shell: bash
         run: |
           set -euo pipefail
-          echo '🌐 Starting Playit agent...'
-          docker pull ghcr.io/playit-cloud/playit-agent:latest
-          docker run -d --name playit-agent --network host \
-            -e SECRET_KEY="$SECRET_KEY" \
-            ghcr.io/playit-cloud/playit-agent:latest
-          sleep 8
-          echo '📡 Playit agent logs:'
-          docker logs --tail 80 playit-agent || true
-
-      - name: Verify Playit agent
-        if: ${{ secrets.PLAYIT_SECRET_KEY != '' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if ! docker ps --format '{{.Names}}' | grep -qx 'playit-agent'; then
-            echo '❌ Playit agent is not running.'
-            docker logs playit-agent || true
-            exit 1
-          fi
-          echo '✅ Playit agent is running.'
-          echo 'ℹ️ Java tunnel: TCP localhost:25565'
-          echo 'ℹ️ Bedrock tunnel: UDP localhost:19132'
+          echo '🌐 Starting Playit without a secret...'
+          curl -fsSL https://playit-cloud.github.io/ppa/key.gpg | gpg --dearmor > playit.gpg
+          sudo install -m 0644 playit.gpg /usr/share/keyrings/playit.gpg
+          echo 'deb [signed-by=/usr/share/keyrings/playit.gpg] https://playit-cloud.github.io/ppa/data ./ ' | sudo tee /etc/apt/sources.list.d/playit.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y playit
+          echo '▶ Starting Playit setup/claim mode...'
+          nohup playit > playit.log 2>&1 &
+          PLAYIT_PID=$!
+          echo "Playit PID: $PLAYIT_PID"
+          sleep 10
+          echo '============================================================'
+          echo '🌐 PLAYIT OUTPUT / CLAIM LINK'
+          echo '============================================================'
+          cat playit.log || true
+          echo '============================================================'
+          echo 'If Playit printed a claim URL, open that URL in your browser to claim the agent.'
+          echo '============================================================'
 
       - name: Start Paper
         shell: bash
@@ -130,19 +107,19 @@ jobs:
           echo '============================================================'
           echo '🟢 Starting Paper Minecraft server'
           echo '🌉 Geyser + Floodgate plugins installed'
+          echo '🌐 Playit claim mode enabled (no secret)'
           echo "🕒 $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           echo '☕ Java:'
           java -version
           echo '============================================================'
           java -Xms512M -Xmx4G -jar paper.jar --nogui
 
-      - name: Playit logs
+      - name: Final Playit logs
         if: always()
         shell: bash
         run: |
           echo '🌐 Playit final logs:'
-          docker logs --tail 150 playit-agent 2>/dev/null || true
-          docker rm -f playit-agent 2>/dev/null || true
+          cat playit.log 2>/dev/null || true
 
       - name: Upload server logs
         if: always()
@@ -153,5 +130,6 @@ jobs:
             logs/
             crash-reports/
             *.log
+            playit.log
           if-no-files-found: ignore
           retention-days: 7
