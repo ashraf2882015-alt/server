@@ -47,7 +47,6 @@ jobs:
           if [ -z "$URL" ]; then echo 'No stable Paper builds are currently available.'; exit 1; fi
           echo "Found stable Paper version: ${FOUND_VERSION}"
           curl -fL -A "$USER_AGENT" -o paper.jar "$URL"
-          ls -lh paper.jar
 
       - name: Download Geyser and Floodgate
         shell: bash
@@ -55,29 +54,24 @@ jobs:
           set -euo pipefail
           mkdir -p plugins
           USER_AGENT='ashraf2882015-alt-paper-server/1.0 (https://github.com/ashraf2882015-alt/server)'
-          echo '🌉 Downloading Geyser-Spigot...'
           curl -fL -A "$USER_AGENT" 'https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot' -o plugins/Geyser-Spigot.jar
-          echo '🚪 Downloading Floodgate-Spigot...'
           curl -fL -A "$USER_AGENT" 'https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot' -o plugins/floodgate-spigot.jar
           ls -lh plugins/*.jar
 
-      - name: Install Playit Agent
+      - name: Download Playit Agent
         shell: bash
         run: |
           set -euo pipefail
           echo '🌐 Downloading Playit Agent...'
           API='https://api.github.com/repos/playit-cloud/playit-agent/releases/latest'
-          ASSET_URL=$(curl -fsSL "$API" | jq -r '.assets[] | select(.name | test("linux.*(amd64|x86_64)"; "i")) | .browser_download_url' | head -n1)
+          ASSET_URL=$(curl -fsSL "$API" | jq -r '.assets[] | select(.name == "playit-linux-amd64") | .browser_download_url' | head -n1)
           if [ -z "$ASSET_URL" ] || [ "$ASSET_URL" = "null" ]; then
-            echo 'Could not find a Linux amd64 Playit release asset.'
-            echo 'Available assets:'
-            curl -fsSL "$API" | jq -r '.assets[].name'
+            echo 'Playit Linux amd64 asset was not found.'
             exit 1
           fi
-          echo "Downloading: $ASSET_URL"
           curl -fL "$ASSET_URL" -o playit
           chmod +x playit
-          ./playit --version || true
+          ls -lh playit
 
       - name: Prepare server
         shell: bash
@@ -87,37 +81,51 @@ jobs:
           grep -q '^eula=true$' eula.txt
           mkdir -p plugins
 
-      - name: Start Paper and Playit
+      - name: Start Playit daemon
         shell: bash
         run: |
-          set -uo pipefail
-          echo '============================================================'
-          echo '🟢 Starting Paper + Geyser + Floodgate + Playit Agent'
-          echo "🕒 $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          echo '☕ Java:'
-          java -version
-          echo '============================================================'
+          set -euo pipefail
+          mkdir -p .playit
+          echo '🌐 Starting Playit daemon...'
+          ./playitd --socket-path="$PWD/.playit/playit.sock" --secret-path="$PWD/.playit/playit.toml" > playitd.log 2>&1 &
+          echo $! > playitd.pid
+          sleep 3
+          if ! kill -0 "$(cat playitd.pid)" 2>/dev/null; then
+            echo 'Playit daemon failed to start:'
+            cat playitd.log || true
+            exit 1
+          fi
+          echo '✅ Playit daemon is running.'
+          cat playitd.log || true
 
-          echo '🌐 Starting Playit Agent...'
-          ./playit > playit.log 2>&1 &
-          PLAYIT_PID=$!
-          echo "Playit PID: $PLAYIT_PID"
-
+      - name: Start Playit client
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '🌐 Starting Playit client...'
+          ./playit --socket-path="$PWD/.playit/playit.sock" > playit.log 2>&1 &
+          echo $! > playit.pid
           sleep 5
           echo '================ PLAYIT LOG ================'
           cat playit.log || true
           echo '============================================='
 
-          echo '🧱 Starting Paper...'
+      - name: Start Paper
+        shell: bash
+        run: |
+          set -uo pipefail
+          echo '🧱 Starting Paper + Geyser + Floodgate...'
           java -Xms512M -Xmx4G -jar paper.jar --nogui
 
-      - name: Show Playit log
+      - name: Show Playit logs
         if: always()
         shell: bash
         run: |
-          echo '================ PLAYIT FINAL LOG ================'
+          echo '================ PLAYIT DAEMON LOG ================'
+          cat playitd.log 2>/dev/null || true
+          echo '================ PLAYIT CLIENT LOG ================'
           cat playit.log 2>/dev/null || true
-          echo '==================================================='
+          echo '===================================================='
 
       - name: Upload server logs
         if: always()
@@ -129,5 +137,6 @@ jobs:
             crash-reports/
             *.log
             playit.log
+            playitd.log
           if-no-files-found: ignore
           retention-days: 7
